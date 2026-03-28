@@ -9,7 +9,6 @@ Usage:
   python3 scripts/instance.py status
 """
 
-import json
 import subprocess
 import sys
 
