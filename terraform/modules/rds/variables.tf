@@ -23,12 +23,17 @@ variable "db_username" {
 variable "db_password" {
   type      = string
   sensitive = true
+
+  validation {
+    condition     = !can(regex("[/@\" ]", var.db_password))
+    error_message = "db_password must not contain '/', '@', '\"', or spaces (RDS restriction)."
+  }
 }
 
 variable "instance_class" {
   type        = string
-  default     = "db.t2.micro"
-  description = "db.t2.micro is free-tier eligible (750 hrs/month)"
+  default     = "db.t3.micro"
+  description = "db.t3.micro is free-tier eligible (750 hrs/month)"
 }
 
 variable "allocated_storage" {
