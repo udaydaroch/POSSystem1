@@ -63,7 +63,7 @@ module "ec2" {
   vpc_id           = module.vpc.vpc_id
   public_subnet_id = module.vpc.public_subnet_ids[0]
   public_key       = var.ssh_public_key
-  instance_type    = "t3.micro"
+  instance_type    = "t3.small"
   tags             = {}
 }
 
