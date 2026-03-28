@@ -130,6 +130,11 @@ resource "aws_instance" "main" {
     volume_type = "gp2"
   }
 
+  # Replace the instance if the key pair changes — new key only takes effect at launch time
+  lifecycle {
+    replace_triggered_by = [aws_key_pair.main]
+  }
+
   tags = merge(var.tags, { Name = var.name })
 }
 

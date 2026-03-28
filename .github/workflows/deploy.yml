@@ -1,7 +1,7 @@
 # ── Mini Prism CI/CD Pipeline ─────────────────────────────────────────────────
 # On push to main:
 # 1. Run tests
-# 2. Terraform — provision EC2 t2.micro + RDS db.t2.micro (free tier)
+# 2. Terraform — provision EC2 t3.micro + RDS db.t3.micro (free tier)
 # 3. Build Docker images and push to ECR
 # 4. SSH into EC2, pull images, restart with Docker Compose
 
@@ -163,12 +163,21 @@ jobs:
       - name: Wait for EC2 SSH
         run: |
           EC2_IP="${{ needs.terraform.outputs.ec2-ip }}"
+          connected=false
           for i in {1..20}; do
-            ssh -i ~/.ssh/mini-prism -o StrictHostKeyChecking=no \
-              -o ConnectTimeout=10 ec2-user@$EC2_IP "echo ok" 2>/dev/null && break
+            if ssh -i ~/.ssh/mini-prism -o StrictHostKeyChecking=no \
+                 -o ConnectTimeout=10 -o BatchMode=yes \
+                 ec2-user@$EC2_IP "echo ok"; then
+              connected=true
+              break
+            fi
             echo "Attempt $i/20 — waiting 15s..."
             sleep 15
           done
+          if [ "$connected" != "true" ]; then
+            echo "EC2 not reachable after 20 attempts (~5 min). Check the instance in the AWS console."
+            exit 1
+          fi
 
       - name: Copy docker-compose file
         run: |
