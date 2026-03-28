@@ -63,7 +63,7 @@ module "ec2" {
   vpc_id           = module.vpc.vpc_id
   public_subnet_id = module.vpc.public_subnet_ids[0]
   public_key       = var.ssh_public_key
-  instance_type    = "t2.micro"
+  instance_type    = "t3.micro"
   tags             = {}
 }
 
@@ -78,7 +78,7 @@ module "rds" {
   db_password           = var.db_password
   db_username           = "prism"
 
-  instance_class      = "db.t2.micro"
+  instance_class      = "db.t3.micro"
   allocated_storage   = 20
   multi_az            = false
   deletion_protection = false

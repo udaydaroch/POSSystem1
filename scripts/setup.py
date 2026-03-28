@@ -61,7 +61,7 @@ def run(cmd, *, capture=False, check=True, env=None, cwd=None, input=None):
         kwargs["text"]   = True
     if input is not None:
         kwargs["input"] = input
-        kwargs["stdin"] = subprocess.PIPE
+        kwargs["text"] = True
     return subprocess.run(cmd, **kwargs)
 
 
@@ -156,7 +156,8 @@ def ensure_s3_bucket(account_id: str) -> str:
             f"--versioning-configuration Status=Enabled")
         run(f"aws s3api put-bucket-encryption --bucket {bucket} "
             f"--server-side-encryption-configuration "
-            f'"{{\"Rules\":[{{\"ApplyServerSideEncryptionByDefault\":{{\"SSEAlgorithm\":\"AES256\"}}}}]}}"')
+            f"'{{\"Rules\":[{{\"ApplyServerSideEncryptionByDefault\":{{\"SSEAlgorithm\":\"AES256\"}}}}]}}'")
+
         ok(f"Created {bucket}")
 
     return bucket

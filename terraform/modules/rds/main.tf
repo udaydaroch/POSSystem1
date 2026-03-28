@@ -36,7 +36,7 @@ resource "aws_security_group" "rds" {
 resource "aws_db_instance" "main" {
   identifier        = var.identifier
   engine            = "postgres"
-  engine_version    = "16.3"
+  engine_version    = "16.13"
   instance_class    = var.instance_class
   allocated_storage = var.allocated_storage
   storage_encrypted = true
@@ -53,7 +53,7 @@ resource "aws_db_instance" "main" {
   deletion_protection    = var.deletion_protection
   skip_final_snapshot    = !var.deletion_protection
 
-  backup_retention_period = 7
+  backup_retention_period = 0
   backup_window           = "03:00-04:00"
   maintenance_window      = "sun:04:00-sun:05:00"
 
