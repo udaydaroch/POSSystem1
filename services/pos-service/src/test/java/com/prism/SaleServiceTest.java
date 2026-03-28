@@ -58,11 +58,11 @@ class SaleServiceTest {
         // Total = 2 × $999.00 = $1998.00
         assertThat(sale.getTotal()).isEqualByComparingTo("1998.00");
 
-        // GST (15%) backed out of GST-inclusive price: 1998 × 0.15/1.15 = 260.87
-        assertThat(sale.getTaxAmount()).isEqualByComparingTo("260.87");
+        // GST (15%) backed out of GST-inclusive price: 1998 × 0.15/1.15 = 260.61
+        assertThat(sale.getTaxAmount()).isEqualByComparingTo("260.61");
 
         // Ex-GST subtotal
-        assertThat(sale.getSubtotal()).isEqualByComparingTo("1737.13");
+        assertThat(sale.getSubtotal()).isEqualByComparingTo("1737.39");
 
         assertThat(sale.getStatus()).isEqualTo(Sale.SaleStatus.COMPLETED);
         assertThat(sale.getCashierUsername()).isEqualTo("cashier1");
