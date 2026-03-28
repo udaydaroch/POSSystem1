@@ -84,7 +84,7 @@ jobs:
         id: tf-output
         run: |
           echo "rds_endpoint=$(terraform output -raw rds_endpoint)" >> $GITHUB_OUTPUT
-          echo "ecr_registry=$(terraform output -raw ecr_urls | python3 -c "import sys,json; d=json.load(sys.stdin); print(d[list(d.keys())[0]].rsplit('/',1)[0])")" >> $GITHUB_OUTPUT
+          echo "ecr_registry=$(terraform output -raw ecr_registry)" >> $GITHUB_OUTPUT
 
   # ── Job 3: Build & Push to ECR ──────────────────────────────────────────────
   build-and-push:
@@ -182,7 +182,7 @@ jobs:
 
       - name: Apply all deployments
         env:
-          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          ECR_REGISTRY: ${{ needs.terraform.outputs.ecr-registry }}
           IMAGE_TAG:    ${{ needs.build-and-push.outputs.image-tag }}
         run: |
           for f in kubernetes/deployments/*.yaml; do

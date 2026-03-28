@@ -2,6 +2,9 @@
 # Creates the EKS cluster, managed node group, and the IAM roles that
 # Kubernetes needs to talk to AWS services.
 
+data "aws_caller_identity" "current" {}
+data "aws_region" "current" {}
+
 # ── IAM: Cluster Role ─────────────────────────────────────────────────────────
 
 resource "aws_iam_role" "cluster" {

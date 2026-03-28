@@ -82,6 +82,7 @@ module "rds" {
 
 # ── Outputs (needed by the CI/CD pipeline) ────────────────────────────────────
 
-output "cluster_name"     { value = module.eks.cluster_name }
-output "rds_endpoint"     { value = module.rds.endpoint }
-output "ecr_urls"         { value = module.eks.ecr_urls }
+output "cluster_name"  { value = module.eks.cluster_name }
+output "rds_endpoint"  { value = module.rds.endpoint }
+output "ecr_registry"  { value = module.eks.ecr_registry }
+output "ecr_urls"      { value = module.eks.ecr_urls }
