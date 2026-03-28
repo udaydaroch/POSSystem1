@@ -10,8 +10,9 @@ variable "private_subnet_ids" {
   type = list(string)
 }
 
-variable "eks_security_group_id" {
-  type = string
+variable "app_security_group_id" {
+  type        = string
+  description = "Security group ID of the application (EC2) that is allowed to connect to RDS"
 }
 
 variable "db_username" {
@@ -25,8 +26,9 @@ variable "db_password" {
 }
 
 variable "instance_class" {
-  type    = string
-  default = "db.t3.micro"
+  type        = string
+  default     = "db.t2.micro"
+  description = "db.t2.micro is free-tier eligible (750 hrs/month)"
 }
 
 variable "allocated_storage" {

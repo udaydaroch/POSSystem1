@@ -1,11 +1,14 @@
 variable "aws_region" {
   type    = string
-  default = "ap-southeast-2"  # Sydney — closest to NZ
+  default = "ap-southeast-2"
 }
 
 variable "db_password" {
   type      = string
   sensitive = true
-  # Set via: export TF_VAR_db_password="your-secure-password"
-  # Or in a terraform.tfvars file (never commit that file)
+}
+
+variable "ssh_public_key" {
+  type        = string
+  description = "SSH public key to install on the EC2 instance (e.g. contents of ~/.ssh/id_rsa.pub)"
 }

@@ -1,0 +1,89 @@
+version: "3.9"
+
+# ── Mini Prism Production ─────────────────────────────────────────────────────
+# Runs on a single EC2 t2.micro (1 vCPU, 1GB RAM).
+# All services are JVM-tuned to fit within the memory budget.
+#
+# Required .env file on the EC2 instance at /opt/mini-prism/.env:
+#   ECR_REGISTRY=<account>.dkr.ecr.ap-southeast-2.amazonaws.com
+#   IMAGE_TAG=latest
+#   DB_HOST=<rds-endpoint>
+#   DB_PASSWORD=<password>
+#   JWT_SECRET=<secret>
+
+services:
+
+  auth-service:
+    image: ${ECR_REGISTRY}/mini-prism/auth-service:${IMAGE_TAG:-latest}
+    container_name: prism-auth
+    restart: unless-stopped
+    environment:
+      DB_URL: jdbc:postgresql://${DB_HOST}:5432/prism_auth
+      DB_USER: prism
+      DB_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      JAVA_OPTS: "-Xmx200m -Xms64m -XX:+UseContainerSupport"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - prism
+
+  inventory-service:
+    image: ${ECR_REGISTRY}/mini-prism/inventory-service:${IMAGE_TAG:-latest}
+    container_name: prism-inventory
+    restart: unless-stopped
+    environment:
+      DB_URL: jdbc:postgresql://${DB_HOST}:5432/prism_inventory
+      DB_USER: prism
+      DB_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      JAVA_OPTS: "-Xmx200m -Xms64m -XX:+UseContainerSupport"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - prism
+
+  pos-service:
+    image: ${ECR_REGISTRY}/mini-prism/pos-service:${IMAGE_TAG:-latest}
+    container_name: prism-pos
+    restart: unless-stopped
+    environment:
+      DB_URL: jdbc:postgresql://${DB_HOST}:5432/prism_pos
+      DB_USER: prism
+      DB_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      INVENTORY_SERVICE_URL: http://prism-inventory:8081
+      JAVA_OPTS: "-Xmx200m -Xms64m -XX:+UseContainerSupport"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    depends_on:
+      inventory-service:
+        condition: service_healthy
+    networks:
+      - prism
+
+  frontend:
+    image: ${ECR_REGISTRY}/mini-prism/frontend:${IMAGE_TAG:-latest}
+    container_name: prism-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - auth-service
+      - inventory-service
+      - pos-service
+    networks:
+      - prism
+
+networks:
+  prism:
+    driver: bridge

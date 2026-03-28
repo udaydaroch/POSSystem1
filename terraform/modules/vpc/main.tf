@@ -1,7 +1,7 @@
 # ── VPC Module ────────────────────────────────────────────────────────────────
-# Creates a production-grade VPC with public and private subnets across
-# two availability zones. Services run in private subnets; the load balancer
-# lives in the public subnets.
+# Public subnets: EC2 instance (internet-facing).
+# Private subnets: RDS (no internet access needed).
+# NAT gateways are optional — disable for free-tier deployments.
 
 resource "aws_vpc" "main" {
   cidr_block           = var.vpc_cidr
@@ -22,7 +22,7 @@ resource "aws_subnet" "public" {
 
   tags = merge(var.tags, {
     Name                     = "${var.name}-public-${count.index + 1}"
-    "kubernetes.io/role/elb" = "1"  # Required for ALB ingress controller
+    "kubernetes.io/role/elb" = "1"
   })
 }
 
@@ -38,27 +38,27 @@ resource "aws_subnet" "private" {
   })
 }
 
-# ── Internet Gateway (public traffic) ─────────────────────────────────────────
+# ── Internet Gateway ──────────────────────────────────────────────────────────
 
 resource "aws_internet_gateway" "main" {
   vpc_id = aws_vpc.main.id
   tags   = merge(var.tags, { Name = "${var.name}-igw" })
 }
 
-# ── NAT Gateway (private subnets → internet for pulling images etc.) ──────────
+# ── NAT Gateway (optional — disable for free tier) ────────────────────────────
 
 resource "aws_eip" "nat" {
-  count  = length(var.availability_zones)
+  count  = var.create_nat_gateway ? length(var.availability_zones) : 0
   domain = "vpc"
   tags   = merge(var.tags, { Name = "${var.name}-nat-eip-${count.index + 1}" })
 }
 
 resource "aws_nat_gateway" "main" {
-  count         = length(var.availability_zones)
+  count         = var.create_nat_gateway ? length(var.availability_zones) : 0
   allocation_id = aws_eip.nat[count.index].id
   subnet_id     = aws_subnet.public[count.index].id
 
-  tags = merge(var.tags, { Name = "${var.name}-nat-${count.index + 1}" })
+  tags       = merge(var.tags, { Name = "${var.name}-nat-${count.index + 1}" })
   depends_on = [aws_internet_gateway.main]
 }
 
@@ -81,13 +81,17 @@ resource "aws_route_table_association" "public" {
   route_table_id = aws_route_table.public.id
 }
 
+# Private route table — uses NAT if enabled, otherwise no internet route (fine for RDS)
 resource "aws_route_table" "private" {
   count  = length(var.availability_zones)
   vpc_id = aws_vpc.main.id
 
-  route {
-    cidr_block     = "0.0.0.0/0"
-    nat_gateway_id = aws_nat_gateway.main[count.index].id
+  dynamic "route" {
+    for_each = var.create_nat_gateway ? [1] : []
+    content {
+      cidr_block     = "0.0.0.0/0"
+      nat_gateway_id = aws_nat_gateway.main[count.index].id
+    }
   }
 
   tags = merge(var.tags, { Name = "${var.name}-private-rt-${count.index + 1}" })

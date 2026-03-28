@@ -1,9 +1,13 @@
-# ── Mini Prism — Dev Environment ──────────────────────────────────────────────
-# This is the root module that wires all sub-modules together.
+# ── Mini Prism — Dev Environment (Free Tier) ──────────────────────────────────
 # Run from this directory:
-#   terraform init
-#   terraform plan
-#   terraform apply
+#   terraform init -backend-config="bucket=<your-s3-bucket>"
+#   terraform plan -var="db_password=<password>" -var="ssh_public_key=$(cat ~/.ssh/id_rsa.pub)"
+#   terraform apply -var="db_password=<password>" -var="ssh_public_key=$(cat ~/.ssh/id_rsa.pub)"
+#
+# Free-tier costs: $0/month (within 12-month free tier limits)
+#   - EC2 t2.micro:   750 hrs/month free
+#   - RDS db.t2.micro: 750 hrs/month free
+#   - No NAT gateways (disabled)
 
 terraform {
   required_version = ">= 1.6"
@@ -16,7 +20,7 @@ terraform {
   }
 
   backend "s3" {
-    # bucket is passed at init time via -backend-config="bucket=<name>"
+    # bucket passed at init time: terraform init -backend-config="bucket=<name>"
     key    = "mini-prism/dev/terraform.tfstate"
     region = "ap-southeast-2"
   }
@@ -47,24 +51,20 @@ module "vpc" {
   name               = local.name
   vpc_cidr           = "10.0.0.0/16"
   availability_zones = local.azs
+  create_nat_gateway = false
   tags               = {}
 }
 
-# ── EKS ───────────────────────────────────────────────────────────────────────
+# ── EC2 (replaces EKS — free tier eligible) ───────────────────────────────────
 
-module "eks" {
-  source             = "../../modules/eks"
-  cluster_name       = local.name
-  kubernetes_version = "1.29"
-  vpc_id             = module.vpc.vpc_id
-  public_subnet_ids  = module.vpc.public_subnet_ids
-  private_subnet_ids = module.vpc.private_subnet_ids
-
-  node_instance_types = ["t3.micro"]
-  node_desired        = 1
-  node_min            = 1
-  node_max            = 1
-  tags                = {}
+module "ec2" {
+  source           = "../../modules/ec2"
+  name             = local.name
+  vpc_id           = module.vpc.vpc_id
+  public_subnet_id = module.vpc.public_subnet_ids[0]
+  public_key       = var.ssh_public_key
+  instance_type    = "t2.micro"
+  tags             = {}
 }
 
 # ── RDS ───────────────────────────────────────────────────────────────────────
@@ -74,20 +74,22 @@ module "rds" {
   identifier            = "${local.name}-db"
   vpc_id                = module.vpc.vpc_id
   private_subnet_ids    = module.vpc.private_subnet_ids
-  eks_security_group_id = module.eks.cluster_security_group_id
+  app_security_group_id = module.ec2.security_group_id
   db_password           = var.db_password
   db_username           = "prism"
 
-  instance_class      = "db.t3.micro"
+  instance_class      = "db.t2.micro"
   allocated_storage   = 20
   multi_az            = false
   deletion_protection = false
   tags                = {}
 }
 
-# ── Outputs (needed by the CI/CD pipeline) ────────────────────────────────────
+# ── Outputs ───────────────────────────────────────────────────────────────────
 
-output "cluster_name"  { value = module.eks.cluster_name }
-output "rds_endpoint"  { value = module.rds.endpoint }
-output "ecr_registry"  { value = module.eks.ecr_registry }
-output "ecr_urls"      { value = module.eks.ecr_urls }
+output "ec2_public_ip"  { value = module.ec2.public_ip }
+output "ec2_public_dns" { value = module.ec2.public_dns }
+output "rds_endpoint"   { value = module.rds.endpoint }
+output "ecr_registry"   { value = module.ec2.ecr_registry }
+output "ecr_urls"       { value = module.ec2.ecr_urls }
+output "app_url"        { value = "http://${module.ec2.public_ip}" }
