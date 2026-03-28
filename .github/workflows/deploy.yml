@@ -247,4 +247,5 @@ jobs:
           PYEOF
 
       - name: Print app URL
-        run: echo "✅ Deployed! App is at: http://${{ needs.terraform.outputs.ec2-ip }}"
+        run: |
+          echo "Deployed! App URL: http://${{ needs.terraform.outputs.ec2-ip }}"
