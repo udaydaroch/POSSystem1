@@ -1,0 +1,61 @@
+# ── ALB Ingress ───────────────────────────────────────────────────────────────
+# Routes external traffic to the correct microservice based on URL path.
+# API paths go to backend services; everything else goes to the React frontend.
+# Requires the AWS Load Balancer Controller to be installed on the cluster.
+#
+# Install controller:
+#   helm repo add eks https://aws.github.io/eks-charts
+#   helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
+#     -n kube-system --set clusterName=mini-prism-dev
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: prism-ingress
+  namespace: prism
+  annotations:
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
+    # Uncomment for HTTPS once you have an ACM certificate:
+    # alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    # alb.ingress.kubernetes.io/ssl-redirect: "443"
+    # alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ap-southeast-2:ACCOUNT:certificate/xxx
+spec:
+  rules:
+    - http:
+        paths:
+          # API routes — go to backend services
+          - path: /api/auth
+            pathType: Prefix
+            backend:
+              service:
+                name: auth-service
+                port:
+                  number: 8082
+
+          - path: /api/inventory
+            pathType: Prefix
+            backend:
+              service:
+                name: inventory-service
+                port:
+                  number: 8081
+
+          - path: /api/pos
+            pathType: Prefix
+            backend:
+              service:
+                name: pos-service
+                port:
+                  number: 8080
+
+          # Catch-all — React frontend (handles its own client-side routing)
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80

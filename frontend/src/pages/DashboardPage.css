@@ -1,0 +1,97 @@
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.stat-card { cursor: default; transition: border-color 0.15s; }
+.stat-card.clickable { cursor: pointer; }
+.stat-card.clickable:hover { border-color: var(--border2); }
+
+.stat-label {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+
+.stat-sub {
+  font-size: 12px;
+  color: var(--dimmed);
+  margin-top: 6px;
+}
+
+.dash-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 20px;
+}
+
+.empty-state {
+  color: var(--dimmed);
+  font-size: 13px;
+  padding: 16px 0;
+  text-align: center;
+}
+
+.link-btn {
+  background: none;
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.sale-list, .stock-list { display: flex; flex-direction: column; gap: 12px; }
+
+.sale-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  background: var(--surface);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+
+.sale-ref  { font-size: 13px; font-weight: 500; color: var(--accent2); }
+.sale-meta { font-size: 11px; color: var(--dimmed); margin-top: 2px; }
+.sale-total { font-size: 14px; font-weight: 500; }
+.sale-gst   { font-size: 11px; color: var(--dimmed); margin-top: 2px; }
+
+.stock-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  background: var(--surface);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+
+.stock-name { font-size: 13px; }
+.stock-sku  { font-size: 11px; color: var(--dimmed); margin-top: 2px; }
+
+@media (max-width: 768px) {
+  .dash-grid { grid-template-columns: 1fr; }
+  .stats-grid { grid-template-columns: 1fr 1fr; }
+}
+
+@media (max-width: 480px) {
+  .stats-grid { grid-template-columns: 1fr; }
+}

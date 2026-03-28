@@ -1,0 +1,91 @@
+services:
+
+  # ── Databases ────────────────────────────────────────────────────────────────
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: prism-postgres
+    environment:
+      POSTGRES_USER: prism
+      POSTGRES_PASSWORD: prism
+      POSTGRES_DB: prism_pos
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./scripts/init-multiple-dbs.sql:/docker-entrypoint-initdb.d/01-init.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prism -d prism_pos"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: prism-redis
+    ports:
+      - "6379:6379"
+
+  # ── Backend Services ──────────────────────────────────────────────────────────
+
+  auth-service:
+    build: ./services/auth-service
+    container_name: prism-auth
+    restart: on-failure
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/prism_auth
+      DB_USER: prism
+      DB_PASSWORD: prism
+      JWT_SECRET: dev-secret-change-in-production-must-be-32-chars
+    ports:
+      - "8082:8082"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  inventory-service:
+    build: ./services/inventory-service
+    container_name: prism-inventory
+    restart: on-failure
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/prism_inventory
+      DB_USER: prism
+      DB_PASSWORD: prism
+      JWT_SECRET: dev-secret-change-in-production-must-be-32-chars
+    ports:
+      - "8081:8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  pos-service:
+    build: ./services/pos-service
+    container_name: prism-pos
+    restart: on-failure
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/prism_pos
+      DB_USER: prism
+      DB_PASSWORD: prism
+      JWT_SECRET: dev-secret-change-in-production-must-be-32-chars
+      INVENTORY_SERVICE_URL: http://inventory-service:8081
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ── Frontend ──────────────────────────────────────────────────────────────────
+
+  frontend:
+    build: ./frontend
+    container_name: prism-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - auth-service
+      - inventory-service
+      - pos-service
+
+volumes:
+  postgres-data:

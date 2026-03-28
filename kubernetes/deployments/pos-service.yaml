@@ -1,0 +1,85 @@
+# ── POS Service Deployment ────────────────────────────────────────────────────
+# Runs 2 replicas for availability. Image tag is replaced by CI/CD pipeline.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pos-service
+  namespace: prism
+  labels:
+    app: pos-service
+    version: "1.0"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: pos-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0    # Always keep at least 1 pod up during deploys
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: pos-service
+    spec:
+      containers:
+        - name: pos-service
+          image: ACCOUNT_ID.dkr.ecr.ap-southeast-2.amazonaws.com/mini-prism/pos-service:IMAGE_TAG
+          ports:
+            - containerPort: 8080
+          env:
+            - name: DB_URL
+              valueFrom:
+                secretKeyRef:
+                  name: prism-db-secret
+                  key: pos-db-url
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: prism-db-secret
+                  key: db-username
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: prism-db-secret
+                  key: db-password
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: prism-jwt-secret
+                  key: jwt-secret
+            - name: INVENTORY_SERVICE_URL
+              value: "http://inventory-service:8081"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          # Liveness probe — restart if the app hangs
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 3
+          # Readiness probe — only send traffic when app is ready
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 5
+            failureThreshold: 3
+      # Spread pods across nodes for resilience
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: pos-service

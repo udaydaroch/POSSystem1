@@ -1,0 +1,11 @@
+variable "identifier"           { type = string }
+variable "vpc_id"               { type = string }
+variable "private_subnet_ids"   { type = list(string) }
+variable "eks_security_group_id"{ type = string }
+variable "db_username"          { type = string  default = "prism" }
+variable "db_password"          { type = string  sensitive = true }
+variable "instance_class"       { type = string  default = "db.t3.micro" }
+variable "allocated_storage"    { type = number  default = 20 }
+variable "multi_az"             { type = bool    default = false }
+variable "deletion_protection"  { type = bool    default = false }
+variable "tags"                 { type = map(string) default = {} }

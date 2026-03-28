@@ -1,0 +1,72 @@
+# ── Kubernetes Services ───────────────────────────────────────────────────────
+# ClusterIP services expose each pod internally within the cluster.
+# The Ingress (below) handles external traffic routing to these services.
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: pos-service
+  namespace: prism
+spec:
+  selector:
+    app: pos-service
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+  type: ClusterIP
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: inventory-service
+  namespace: prism
+spec:
+  selector:
+    app: inventory-service
+  ports:
+    - name: http
+      port: 8081
+      targetPort: 8081
+  type: ClusterIP
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-service
+  namespace: prism
+spec:
+  selector:
+    app: auth-service
+  ports:
+    - name: http
+      port: 8082
+      targetPort: 8082
+  type: ClusterIP
+
+---
+# ── Namespace ─────────────────────────────────────────────────────────────────
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: prism
+  labels:
+    name: prism
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: prism
+spec:
+  selector:
+    app: frontend
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+  type: ClusterIP
