@@ -15,12 +15,11 @@ terraform {
     }
   }
 
-  # Uncomment to store state in S3 (recommended for real projects)
-  # backend "s3" {
-  #   bucket = "your-terraform-state-bucket"
-  #   key    = "mini-prism/dev/terraform.tfstate"
-  #   region = "ap-southeast-2"
-  # }
+  backend "s3" {
+    # bucket is passed at init time via -backend-config="bucket=<name>"
+    key    = "mini-prism/dev/terraform.tfstate"
+    region = "ap-southeast-2"
+  }
 }
 
 provider "aws" {

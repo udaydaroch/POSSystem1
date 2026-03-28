@@ -1,8 +1,8 @@
 # ── Mini Prism CI/CD Pipeline ─────────────────────────────────────────────────
 # Triggers on push to main.
 # 1. Runs tests
-# 2. Builds Docker images (backend + frontend) and pushes to ECR
-# 3. Applies Terraform changes
+# 2. Applies Terraform (creates VPC, EKS, RDS, ECR repos)
+# 3. Builds Docker images and pushes to ECR
 # 4. Rolls out new images to EKS
 
 name: Deploy to AWS
@@ -42,12 +42,55 @@ jobs:
       - name: Test auth-service
         run: mvn test -f services/auth-service/pom.xml
 
-  # ── Job 2: Build & Push to ECR ──────────────────────────────────────────────
-  build-and-push:
-    name: Build & push Docker images
+  # ── Job 2: Terraform (creates ECR repos + all infra) ────────────────────────
+  terraform:
+    name: Terraform apply
     runs-on: ubuntu-latest
     needs: test
     if: github.ref == 'refs/heads/main'
+    outputs:
+      rds-endpoint: ${{ steps.tf-output.outputs.rds_endpoint }}
+      ecr-registry: ${{ steps.tf-output.outputs.ecr_registry }}
+    defaults:
+      run:
+        working-directory: terraform/envs/dev
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.6.0"
+          terraform_wrapper: false
+
+      - name: Terraform init
+        run: terraform init -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}"
+
+      - name: Terraform plan
+        run: terraform plan -var="db_password=${{ secrets.DB_PASSWORD }}"
+
+      - name: Terraform apply
+        run: terraform apply -auto-approve -var="db_password=${{ secrets.DB_PASSWORD }}"
+
+      - name: Capture Terraform outputs
+        id: tf-output
+        run: |
+          echo "rds_endpoint=$(terraform output -raw rds_endpoint)" >> $GITHUB_OUTPUT
+          echo "ecr_registry=$(terraform output -raw ecr_urls | python3 -c "import sys,json; d=json.load(sys.stdin); print(d[list(d.keys())[0]].rsplit('/',1)[0])")" >> $GITHUB_OUTPUT
+
+  # ── Job 3: Build & Push to ECR ──────────────────────────────────────────────
+  build-and-push:
+    name: Build & push Docker images
+    runs-on: ubuntu-latest
+    needs: terraform
     outputs:
       image-tag: ${{ steps.tag.outputs.tag }}
 
@@ -90,47 +133,12 @@ jobs:
           ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
           IMAGE_TAG:     ${{ steps.tag.outputs.tag }}
         run: |
-          echo "Building frontend..."
           docker build \
             -t $ECR_REGISTRY/mini-prism/frontend:$IMAGE_TAG \
             -t $ECR_REGISTRY/mini-prism/frontend:latest \
             ./frontend
           docker push $ECR_REGISTRY/mini-prism/frontend:$IMAGE_TAG
           docker push $ECR_REGISTRY/mini-prism/frontend:latest
-          echo "frontend pushed successfully"
-
-  # ── Job 3: Terraform ────────────────────────────────────────────────────────
-  terraform:
-    name: Terraform apply
-    runs-on: ubuntu-latest
-    needs: build-and-push
-    defaults:
-      run:
-        working-directory: terraform/envs/dev
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region:            ${{ env.AWS_REGION }}
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "1.6.0"
-
-      - name: Terraform init
-        run: terraform init
-
-      - name: Terraform plan
-        run: terraform plan -var="db_password=${{ secrets.DB_PASSWORD }}"
-
-      - name: Terraform apply
-        run: terraform apply -auto-approve -var="db_password=${{ secrets.DB_PASSWORD }}"
 
   # ── Job 4: Deploy to Kubernetes ─────────────────────────────────────────────
   deploy:
@@ -156,7 +164,7 @@ jobs:
 
       - name: Update Kubernetes secrets
         env:
-          RDS_ENDPOINT: ${{ secrets.RDS_ENDPOINT }}
+          RDS_ENDPOINT: ${{ needs.terraform.outputs.rds-endpoint }}
           DB_PASSWORD:  ${{ secrets.DB_PASSWORD }}
           JWT_SECRET:   ${{ secrets.JWT_SECRET }}
         run: |
@@ -174,10 +182,9 @@ jobs:
 
       - name: Apply all deployments
         env:
-          ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
           IMAGE_TAG:    ${{ needs.build-and-push.outputs.image-tag }}
         run: |
-          # Substitute placeholders and apply
           for f in kubernetes/deployments/*.yaml; do
             sed "s|ACCOUNT_ID.dkr.ecr.ap-southeast-2.amazonaws.com|$ECR_REGISTRY|g; s|IMAGE_TAG|$IMAGE_TAG|g" $f \
               | kubectl apply -f -
