@@ -47,6 +47,7 @@ module "vpc" {
   name               = local.name
   vpc_cidr           = "10.0.0.0/16"
   availability_zones = local.azs
+  tags               = {}
 }
 
 # ── EKS ───────────────────────────────────────────────────────────────────────
@@ -54,15 +55,16 @@ module "vpc" {
 module "eks" {
   source             = "../../modules/eks"
   cluster_name       = local.name
+  kubernetes_version = "1.29"
   vpc_id             = module.vpc.vpc_id
   public_subnet_ids  = module.vpc.public_subnet_ids
   private_subnet_ids = module.vpc.private_subnet_ids
 
-  # t3.medium = 2 vCPU / 4 GB — good for running 3 Spring Boot services
   node_instance_types = ["t3.micro"]
   node_desired        = 1
   node_min            = 1
   node_max            = 1
+  tags                = {}
 }
 
 # ── RDS ───────────────────────────────────────────────────────────────────────
@@ -74,10 +76,13 @@ module "rds" {
   private_subnet_ids    = module.vpc.private_subnet_ids
   eks_security_group_id = module.eks.cluster_security_group_id
   db_password           = var.db_password
+  db_username           = "prism"
 
   instance_class      = "db.t3.micro"
   allocated_storage   = 20
-  deletion_protection = false  # Set to true for production
+  multi_az            = false
+  deletion_protection = false
+  tags                = {}
 }
 
 # ── Outputs (needed by the CI/CD pipeline) ────────────────────────────────────
