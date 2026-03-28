@@ -24,6 +24,11 @@ resource "aws_iam_role_policy_attachment" "ecr_read" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
 
+resource "aws_iam_role_policy_attachment" "ssm" {
+  role       = aws_iam_role.ec2.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
 resource "aws_iam_instance_profile" "ec2" {
   name = "${var.name}-ec2-profile"
   role = aws_iam_role.ec2.name
@@ -112,18 +117,18 @@ resource "aws_instance" "main" {
 
   user_data = <<-EOF
     #!/bin/bash
-    set -e
-    dnf update -y
     dnf install -y docker
-    systemctl start docker
-    systemctl enable docker
+    systemctl enable --now docker
     usermod -aG docker ec2-user
     mkdir -p /usr/local/lib/docker/cli-plugins
     curl -SL https://github.com/docker/compose/releases/download/v2.24.0/docker-compose-linux-x86_64 \
       -o /usr/local/lib/docker/cli-plugins/docker-compose
     chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
     mkdir -p /opt/mini-prism
+    systemctl enable --now amazon-ssm-agent
   EOF
+
+  user_data_replace_on_change = true
 
   root_block_device {
     volume_size = 8

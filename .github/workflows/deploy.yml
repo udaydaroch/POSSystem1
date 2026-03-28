@@ -48,6 +48,7 @@ jobs:
     needs: test
     if: github.ref == 'refs/heads/main'
     outputs:
+      instance-id:  ${{ steps.tf-output.outputs.instance_id }}
       ec2-ip:       ${{ steps.tf-output.outputs.ec2_ip }}
       rds-host:     ${{ steps.tf-output.outputs.rds_host }}
       ecr-registry: ${{ steps.tf-output.outputs.ecr_registry }}
@@ -83,6 +84,7 @@ jobs:
       - name: Capture outputs
         id: tf-output
         run: |
+          echo "instance_id=$(terraform output -raw ec2_instance_id)"  >> $GITHUB_OUTPUT
           echo "ec2_ip=$(terraform output -raw ec2_public_ip)"       >> $GITHUB_OUTPUT
           echo "rds_host=$(terraform output -raw rds_endpoint)"      >> $GITHUB_OUTPUT
           echo "ecr_registry=$(terraform output -raw ecr_registry)"  >> $GITHUB_OUTPUT
@@ -138,7 +140,7 @@ jobs:
           docker push $ECR_REGISTRY/mini-prism/frontend:$IMAGE_TAG
           docker push $ECR_REGISTRY/mini-prism/frontend:latest
 
-  # ── Job 4: Deploy to EC2 ──────────────────────────────────────────────────────
+  # ── Job 4: Deploy to EC2 via SSM (no SSH required) ───────────────────────────
   deploy:
     name: Deploy to EC2
     runs-on: ubuntu-latest
@@ -147,71 +149,102 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Write SSH key
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/mini-prism
-          chmod 600 ~/.ssh/mini-prism
-
-      - name: Configure AWS credentials (for ECR login on EC2)
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region:            ${{ env.AWS_REGION }}
 
-      - name: Wait for EC2 SSH
+      - name: Wait for SSM agent
+        env:
+          INSTANCE_ID: ${{ needs.terraform.outputs.instance-id }}
         run: |
-          EC2_IP="${{ needs.terraform.outputs.ec2-ip }}"
-          connected=false
           for i in {1..20}; do
-            if ssh -i ~/.ssh/mini-prism -o StrictHostKeyChecking=no \
-                 -o ConnectTimeout=10 -o BatchMode=yes \
-                 ec2-user@$EC2_IP "echo ok"; then
-              connected=true
+            STATUS=$(aws ssm describe-instance-information \
+              --filters "Key=InstanceIds,Values=$INSTANCE_ID" \
+              --query "InstanceInformationList[0].PingStatus" \
+              --output text 2>/dev/null || echo "None")
+            if [ "$STATUS" = "Online" ]; then
+              echo "SSM agent is online"
               break
             fi
-            echo "Attempt $i/20 — waiting 15s..."
+            echo "Attempt $i/20 — status: $STATUS, waiting 15s..."
             sleep 15
+            if [ "$i" -eq 20 ]; then
+              echo "SSM agent not online after 5 min — check the instance in AWS console"
+              exit 1
+            fi
           done
-          if [ "$connected" != "true" ]; then
-            echo "EC2 not reachable after 20 attempts (~5 min). Check the instance in the AWS console."
-            exit 1
-          fi
 
-      - name: Copy docker-compose file
-        run: |
-          scp -i ~/.ssh/mini-prism -o StrictHostKeyChecking=no \
-            docker-compose.prod.yml \
-            ec2-user@${{ needs.terraform.outputs.ec2-ip }}:/opt/mini-prism/docker-compose.yml
-
-      - name: Deploy
+      - name: Deploy via SSM
         env:
-          EC2_IP:       ${{ needs.terraform.outputs.ec2-ip }}
+          INSTANCE_ID:  ${{ needs.terraform.outputs.instance-id }}
           ECR_REGISTRY: ${{ needs.terraform.outputs.ecr-registry }}
           IMAGE_TAG:    ${{ needs.build-and-push.outputs.image-tag }}
           RDS_HOST:     ${{ needs.terraform.outputs.rds-host }}
           DB_PASSWORD:  ${{ secrets.DB_PASSWORD }}
           JWT_SECRET:   ${{ secrets.JWT_SECRET }}
         run: |
-          ssh -i ~/.ssh/mini-prism -o StrictHostKeyChecking=no ec2-user@$EC2_IP "cat > /opt/mini-prism/.env" <<EOF
-          ECR_REGISTRY=${ECR_REGISTRY}
-          IMAGE_TAG=${IMAGE_TAG}
-          DB_HOST=${RDS_HOST}
-          DB_PASSWORD=${DB_PASSWORD}
-          JWT_SECRET=${JWT_SECRET}
-          EOF
+          python3 - <<'PYEOF'
+          import base64, json, os, subprocess, sys
 
-          ssh -i ~/.ssh/mini-prism -o StrictHostKeyChecking=no ec2-user@$EC2_IP "bash -s" <<REMOTE
-          set -e
-          aws ecr get-login-password --region ${AWS_REGION} \
-            | docker login --username AWS --password-stdin ${ECR_REGISTRY}
-          cd /opt/mini-prism
-          docker compose pull
-          docker compose --env-file .env up -d --remove-orphans
-          docker compose ps
-          REMOTE
+          # base64-encode file contents so special characters can't break anything
+          compose_b64 = base64.b64encode(open("docker-compose.prod.yml", "rb").read()).decode()
+          env_text = "\n".join([
+              "ECR_REGISTRY=" + os.environ["ECR_REGISTRY"],
+              "IMAGE_TAG="    + os.environ["IMAGE_TAG"],
+              "DB_HOST="      + os.environ["RDS_HOST"],
+              "DB_PASSWORD="  + os.environ["DB_PASSWORD"],
+              "JWT_SECRET="   + os.environ["JWT_SECRET"],
+          ])
+          env_b64 = base64.b64encode(env_text.encode()).decode()
+
+          ecr    = os.environ["ECR_REGISTRY"]
+          region = os.environ.get("AWS_REGION", "ap-southeast-2")
+
+          commands = [
+              "set -e",
+              "mkdir -p /opt/mini-prism",
+              f"echo {compose_b64} | base64 -d > /opt/mini-prism/docker-compose.yml",
+              f"echo {env_b64} | base64 -d > /opt/mini-prism/.env",
+              f"aws ecr get-login-password --region {region} | docker login --username AWS --password-stdin {ecr}",
+              "cd /opt/mini-prism && docker compose pull",
+              "cd /opt/mini-prism && docker compose --env-file .env up -d --remove-orphans",
+              "docker compose -f /opt/mini-prism/docker-compose.yml ps",
+          ]
+
+          instance_id = os.environ["INSTANCE_ID"]
+          send = subprocess.run([
+              "aws", "ssm", "send-command",
+              "--instance-id", instance_id,
+              "--document-name", "AWS-RunShellScript",
+              "--parameters", json.dumps({"commands": commands}),
+              "--query", "Command.CommandId",
+              "--output", "text",
+          ], check=True, capture_output=True, text=True)
+          cmd_id = send.stdout.strip()
+          print(f"SSM Command ID: {cmd_id}")
+
+          subprocess.run([
+              "aws", "ssm", "wait", "command-executed",
+              "--command-id", cmd_id,
+              "--instance-id", instance_id,
+          ], check=True)
+
+          inv = subprocess.run([
+              "aws", "ssm", "get-command-invocation",
+              "--command-id", cmd_id,
+              "--instance-id", instance_id,
+          ], check=True, capture_output=True, text=True)
+          data = json.loads(inv.stdout)
+          print(data.get("StandardOutputContent", ""))
+          if data.get("StandardErrorContent"):
+              print(data["StandardErrorContent"], file=sys.stderr)
+          if data["Status"] != "Success":
+              print(f"Deploy failed — status: {data['Status']}", file=sys.stderr)
+              sys.exit(1)
+          PYEOF
 
       - name: Print app URL
-        run: |
-          echo "✅ Deployed! App is at: http://${{ needs.terraform.outputs.ec2-ip }}"
+        run: echo "✅ Deployed! App is at: http://${{ needs.terraform.outputs.ec2-ip }}"
