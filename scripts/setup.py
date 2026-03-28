@@ -167,9 +167,8 @@ def ensure_s3_bucket(account_id: str) -> str:
 def print_github_secrets(account_id: str, bucket: str, pub_key: str):
     step("GitHub Actions secrets")
 
-    aws_key_id     = run_out("aws configure get aws_access_key_id")
-    aws_secret     = run_out("aws configure get aws_secret_access_key")
-    priv_key       = SSH_KEY.read_text().strip()
+    aws_key_id = run_out("aws configure get aws_access_key_id")
+    aws_secret = run_out("aws configure get aws_secret_access_key")
 
     print(f"""
   {BOLD}Add these secrets at:{RESET}
