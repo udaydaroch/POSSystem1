@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { inventoryApi } from '../api/client'
+import { useAuth } from '../context/AuthContext'
 import './InventoryPage.css'
 
 const CATEGORIES = ['ELECTRONICS','APPLIANCES','COMPUTERS','PHONES','ACCESSORIES','TV_AUDIO','GAMING','OTHER']
@@ -7,6 +8,8 @@ const CATEGORIES = ['ELECTRONICS','APPLIANCES','COMPUTERS','PHONES','ACCESSORIES
 const EMPTY_FORM = { name:'', sku:'', description:'', category:'ELECTRONICS', price:'', stockLevel:'', lowStockThreshold:'5' }
 
 export default function InventoryPage() {
+  const { user } = useAuth()
+  const canManage = user?.role === 'MANAGER' || user?.role === 'ADMIN'
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -72,9 +75,11 @@ export default function InventoryPage() {
     <div>
       <div className="page-header">
         <div className="page-title">Inventory</div>
-        <button className="btn btn-primary" onClick={() => { setShowForm(true); setError('') }}>
-          + Add Product
-        </button>
+        {canManage && (
+          <button className="btn btn-primary" onClick={() => { setShowForm(true); setError('') }}>
+            + Add Product
+          </button>
+        )}
       </div>
 
       <input
@@ -86,7 +91,7 @@ export default function InventoryPage() {
       />
 
       {/* Add product form */}
-      {showForm && (
+      {canManage && showForm && (
         <div className="form-overlay" onClick={() => setShowForm(false)}>
           <div className="form-card card fade-in" onClick={e => e.stopPropagation()}>
             <div className="form-head">
