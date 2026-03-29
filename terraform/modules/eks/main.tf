@@ -125,6 +125,24 @@ resource "aws_eks_node_group" "main" {
   tags = var.tags
 }
 
+# ── Subnet tags for ALB auto-discovery ───────────────────────────────────────
+# The AWS Load Balancer Controller requires the cluster tag on subnets to
+# discover where to place internet-facing ALBs.
+
+resource "aws_ec2_tag" "public_subnet_cluster" {
+  count       = length(var.public_subnet_ids)
+  resource_id = var.public_subnet_ids[count.index]
+  key         = "kubernetes.io/cluster/${var.cluster_name}"
+  value       = "shared"
+}
+
+resource "aws_ec2_tag" "private_subnet_cluster" {
+  count       = length(var.private_subnet_ids)
+  resource_id = var.private_subnet_ids[count.index]
+  key         = "kubernetes.io/cluster/${var.cluster_name}"
+  value       = "shared"
+}
+
 # ── ECR Repositories (one per service) ───────────────────────────────────────
 
 resource "aws_ecr_repository" "services" {
