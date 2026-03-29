@@ -222,6 +222,14 @@ jobs:
               exit 0
             fi
             echo "Attempt $i/30 — ALB not ready yet, waiting 10s..."
+            if [ $((i % 5)) -eq 0 ]; then
+              echo "--- ingress events ---"
+              kubectl describe ingress prism-ingress -n prism 2>/dev/null | tail -20 || true
+              echo "--- LBC logs (last 20 lines) ---"
+              kubectl logs -n kube-system \
+                -l app.kubernetes.io/name=aws-load-balancer-controller \
+                --tail=20 2>/dev/null || true
+            fi
             sleep 10
           done
           echo ""
