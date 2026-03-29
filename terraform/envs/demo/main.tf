@@ -1,12 +1,11 @@
 # ── Mini Prism — Demo Environment (EKS) ───────────────────────────────────────
-# Reuses the existing dev VPC and RDS to stay within free-tier limits.
-# EKS nodes run in public subnets (no NAT gateway needed).
-# ECR repos are shared with the dev environment.
+# PostgreSQL runs inside the cluster — no external RDS needed.
+# EKS nodes run in public subnets — no NAT gateway cost.
 #
-# Spin up:   trigger "Deploy Demo (EKS)" workflow in GitHub Actions
-# Tear down: trigger "Teardown Demo (EKS)" workflow after the interview
+# Spin up:   trigger "Deploy Demo (EKS)" in GitHub Actions
+# Tear down: trigger "Teardown Demo (EKS)" after the interview
 #
-# Estimated cost: ~$5-10/day (EKS control plane + 2x t3.medium nodes)
+# Estimated cost: ~$5/day (EKS control plane + 2x t3.medium nodes)
 
 terraform {
   required_version = ">= 1.6"
@@ -46,57 +45,32 @@ provider "aws" {
 
 locals {
   cluster_name = "mini-prism-demo"
+  azs          = ["${var.aws_region}a", "${var.aws_region}b"]
 }
 
-# ── Reuse existing dev VPC ────────────────────────────────────────────────────
+# ── VPC ───────────────────────────────────────────────────────────────────────
+# No NAT gateway — nodes go in public subnets so they can reach ECR directly.
 
-data "aws_vpc" "dev" {
-  tags = { Name = "mini-prism-dev-vpc" }
+module "vpc" {
+  source             = "../../modules/vpc"
+  name               = "mini-prism-demo"
+  vpc_cidr           = "10.1.0.0/16"
+  availability_zones = local.azs
+  create_nat_gateway = false
+  tags               = {}
 }
 
-data "aws_subnets" "public" {
-  filter {
-    name   = "vpc-id"
-    values = [data.aws_vpc.dev.id]
-  }
-  filter {
-    name   = "tag:kubernetes.io/role/elb"
-    values = ["1"]
-  }
-}
-
-data "aws_subnets" "private" {
-  filter {
-    name   = "vpc-id"
-    values = [data.aws_vpc.dev.id]
-  }
-  filter {
-    name   = "tag:kubernetes.io/role/internal-elb"
-    values = ["1"]
-  }
-}
-
-# ── Reuse existing dev RDS ────────────────────────────────────────────────────
-
-data "aws_db_instance" "dev" {
-  db_instance_identifier = "mini-prism-dev-db"
-}
-
-data "aws_security_group" "dev_rds" {
-  name   = "mini-prism-dev-db-sg"
-  vpc_id = data.aws_vpc.dev.id
-}
-
-# ── EKS cluster in the dev VPC ────────────────────────────────────────────────
-# Nodes go in public subnets so they can reach ECR without a NAT gateway.
+# ── EKS ───────────────────────────────────────────────────────────────────────
+# Nodes in public subnets (internet access without NAT gateway).
+# ECR repos shared with dev — not recreated here.
 
 module "eks" {
   source              = "../../modules/eks"
   cluster_name        = local.cluster_name
-  vpc_id              = data.aws_vpc.dev.id
-  public_subnet_ids   = data.aws_subnets.public.ids
-  private_subnet_ids  = data.aws_subnets.private.ids
-  node_subnet_ids     = data.aws_subnets.public.ids
+  vpc_id              = module.vpc.vpc_id
+  public_subnet_ids   = module.vpc.public_subnet_ids
+  private_subnet_ids  = module.vpc.private_subnet_ids
+  node_subnet_ids     = module.vpc.public_subnet_ids
   node_instance_types = ["t3.medium"]
   node_desired        = 2
   node_min            = 1
@@ -105,18 +79,7 @@ module "eks" {
   tags                = {}
 }
 
-# Allow EKS pods to reach the existing dev RDS
-resource "aws_security_group_rule" "eks_to_rds" {
-  type                     = "ingress"
-  from_port                = 5432
-  to_port                  = 5432
-  protocol                 = "tcp"
-  source_security_group_id = module.eks.cluster_security_group_id
-  security_group_id        = data.aws_security_group.dev_rds.id
-  description              = "EKS demo cluster to dev RDS"
-}
-
-# ── OIDC Provider (for AWS Load Balancer Controller) ─────────────────────────
+# ── OIDC Provider ─────────────────────────────────────────────────────────────
 
 data "tls_certificate" "eks" {
   url = module.eks.cluster_oidc_issuer
@@ -169,5 +132,4 @@ resource "aws_iam_role_policy_attachment" "lbc" {
 
 output "cluster_name" { value = module.eks.cluster_name }
 output "ecr_registry" { value = module.eks.ecr_registry }
-output "rds_endpoint" { value = data.aws_db_instance.dev.address }
-output "lbc_role_arn" { value = aws_iam_role.lbc.arn }
+output "lbc_role_arn"  { value = aws_iam_role.lbc.arn }

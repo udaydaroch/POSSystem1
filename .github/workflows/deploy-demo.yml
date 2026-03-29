@@ -20,7 +20,6 @@ jobs:
     outputs:
       cluster-name:  ${{ steps.tf-out.outputs.cluster_name }}
       ecr-registry:  ${{ steps.tf-out.outputs.ecr_registry }}
-      rds-endpoint:  ${{ steps.tf-out.outputs.rds_endpoint }}
       lbc-role-arn:  ${{ steps.tf-out.outputs.lbc_role_arn }}
     defaults:
       run:
@@ -53,7 +52,6 @@ jobs:
         run: |
           echo "cluster_name=$(terraform output -raw cluster_name)" >> $GITHUB_OUTPUT
           echo "ecr_registry=$(terraform output -raw ecr_registry)"  >> $GITHUB_OUTPUT
-          echo "rds_endpoint=$(terraform output -raw rds_endpoint)"  >> $GITHUB_OUTPUT
           echo "lbc_role_arn=$(terraform output -raw lbc_role_arn)"  >> $GITHUB_OUTPUT
 
   # ── Job 2: Build & push Docker images ────────────────────────────────────────
@@ -149,14 +147,14 @@ jobs:
 
       - name: Create Kubernetes secrets
         env:
-          RDS_ENDPOINT: ${{ needs.terraform.outputs.rds-endpoint }}
-          DB_PASSWORD:  ${{ secrets.DB_PASSWORD }}
-          JWT_SECRET:   ${{ secrets.JWT_SECRET }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          JWT_SECRET:  ${{ secrets.JWT_SECRET }}
         run: |
+          # PostgreSQL runs in-cluster at postgres:5432
           kubectl create secret generic prism-db-secret \
-            --from-literal=pos-db-url="jdbc:postgresql://$RDS_ENDPOINT:5432/prism_pos" \
-            --from-literal=inventory-db-url="jdbc:postgresql://$RDS_ENDPOINT:5432/prism_inventory" \
-            --from-literal=auth-db-url="jdbc:postgresql://$RDS_ENDPOINT:5432/prism_auth" \
+            --from-literal=pos-db-url="jdbc:postgresql://postgres:5432/prism_pos" \
+            --from-literal=inventory-db-url="jdbc:postgresql://postgres:5432/prism_inventory" \
+            --from-literal=auth-db-url="jdbc:postgresql://postgres:5432/prism_auth" \
             --from-literal=db-username="prism" \
             --from-literal=db-password="$DB_PASSWORD" \
             --namespace prism --dry-run=client -o yaml | kubectl apply -f -
@@ -164,6 +162,11 @@ jobs:
           kubectl create secret generic prism-jwt-secret \
             --from-literal=jwt-secret="$JWT_SECRET" \
             --namespace prism --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Deploy PostgreSQL
+        run: |
+          kubectl apply -f kubernetes/postgres/postgres.yaml
+          kubectl rollout status deployment/postgres -n prism --timeout=120s
 
       - name: Apply manifests
         env:
