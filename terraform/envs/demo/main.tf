@@ -1,10 +1,12 @@
 # ── Mini Prism — Demo Environment (EKS) ───────────────────────────────────────
-# Used for interview demos only. Spin up before the demo, destroy after.
+# Reuses the existing dev VPC and RDS to stay within free-tier limits.
+# EKS nodes run in public subnets (no NAT gateway needed).
+# ECR repos are shared with the dev environment.
 #
-#   terraform init -backend-config="bucket=<your-s3-bucket>"
-#   terraform apply -var="db_password=<password>"
+# Spin up:   trigger "Deploy Demo (EKS)" workflow in GitHub Actions
+# Tear down: trigger "Teardown Demo (EKS)" workflow after the interview
 #
-# Estimated cost: ~$5-10/day. Run terraform destroy when done.
+# Estimated cost: ~$5-10/day (EKS control plane + 2x t3.medium nodes)
 
 terraform {
   required_version = ">= 1.6"
@@ -43,58 +45,78 @@ provider "aws" {
 }
 
 locals {
-  name         = "mini-prism-demo"
   cluster_name = "mini-prism-demo"
-  region       = var.aws_region
-  azs          = ["${var.aws_region}a", "${var.aws_region}b"]
 }
 
-# ── VPC ───────────────────────────────────────────────────────────────────────
-# NAT gateway required — EKS nodes in private subnets need internet to pull ECR images
+# ── Reuse existing dev VPC ────────────────────────────────────────────────────
 
-module "vpc" {
-  source             = "../../modules/vpc"
-  name               = local.name
-  vpc_cidr           = "10.1.0.0/16"
-  availability_zones = local.azs
-  create_nat_gateway = true
-  tags               = {}
+data "aws_vpc" "dev" {
+  tags = { Name = "mini-prism-dev-vpc" }
 }
 
-# ── EKS ───────────────────────────────────────────────────────────────────────
+data "aws_subnets" "public" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.dev.id]
+  }
+  filter {
+    name   = "tag:kubernetes.io/role/elb"
+    values = ["1"]
+  }
+}
+
+data "aws_subnets" "private" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.dev.id]
+  }
+  filter {
+    name   = "tag:kubernetes.io/role/internal-elb"
+    values = ["1"]
+  }
+}
+
+# ── Reuse existing dev RDS ────────────────────────────────────────────────────
+
+data "aws_db_instance" "dev" {
+  db_instance_identifier = "mini-prism-dev-db"
+}
+
+data "aws_security_group" "dev_rds" {
+  name   = "mini-prism-dev-db-sg"
+  vpc_id = data.aws_vpc.dev.id
+}
+
+# ── EKS cluster in the dev VPC ────────────────────────────────────────────────
+# Nodes go in public subnets so they can reach ECR without a NAT gateway.
 
 module "eks" {
   source              = "../../modules/eks"
   cluster_name        = local.cluster_name
-  vpc_id              = module.vpc.vpc_id
-  public_subnet_ids   = module.vpc.public_subnet_ids
-  private_subnet_ids  = module.vpc.private_subnet_ids
+  vpc_id              = data.aws_vpc.dev.id
+  public_subnet_ids   = data.aws_subnets.public.ids
+  private_subnet_ids  = data.aws_subnets.private.ids
+  node_subnet_ids     = data.aws_subnets.public.ids
   node_instance_types = ["t3.medium"]
   node_desired        = 2
   node_min            = 1
   node_max            = 3
+  create_ecr_repos    = false
   tags                = {}
 }
 
-# ── RDS ───────────────────────────────────────────────────────────────────────
-
-module "rds" {
-  source                = "../../modules/rds"
-  identifier            = "${local.name}-db"
-  vpc_id                = module.vpc.vpc_id
-  private_subnet_ids    = module.vpc.private_subnet_ids
-  app_security_group_id = module.eks.cluster_security_group_id
-  db_password           = var.db_password
-  db_username           = "prism"
-  instance_class        = "db.t3.micro"
-  allocated_storage     = 20
-  multi_az              = false
-  deletion_protection   = false
-  tags                  = {}
+# Allow EKS pods to reach the existing dev RDS
+resource "aws_security_group_rule" "eks_to_rds" {
+  type                     = "ingress"
+  from_port                = 5432
+  to_port                  = 5432
+  protocol                 = "tcp"
+  source_security_group_id = module.eks.cluster_security_group_id
+  security_group_id        = data.aws_security_group.dev_rds.id
+  description              = "EKS demo cluster to dev RDS"
 }
 
-# ── OIDC Provider ─────────────────────────────────────────────────────────────
-# Allows K8s service accounts to assume IAM roles (needed for AWS LBC)
+# ── OIDC Provider (for AWS Load Balancer Controller) ─────────────────────────
 
 data "tls_certificate" "eks" {
   url = module.eks.cluster_oidc_issuer
@@ -107,7 +129,6 @@ resource "aws_iam_openid_connect_provider" "eks" {
 }
 
 # ── AWS Load Balancer Controller IAM ─────────────────────────────────────────
-# The LBC runs inside the cluster and creates the ALB for the Ingress resource.
 
 data "http" "lbc_policy" {
   url = "https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.7.2/docs/install/iam_policy.json"
@@ -146,7 +167,7 @@ resource "aws_iam_role_policy_attachment" "lbc" {
 
 # ── Outputs ───────────────────────────────────────────────────────────────────
 
-output "cluster_name"  { value = module.eks.cluster_name }
-output "ecr_registry"  { value = module.eks.ecr_registry }
-output "rds_endpoint"  { value = module.rds.endpoint }
-output "lbc_role_arn"  { value = aws_iam_role.lbc.arn }
+output "cluster_name" { value = module.eks.cluster_name }
+output "ecr_registry" { value = module.eks.ecr_registry }
+output "rds_endpoint" { value = data.aws_db_instance.dev.address }
+output "lbc_role_arn" { value = aws_iam_role.lbc.arn }

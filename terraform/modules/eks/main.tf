@@ -103,7 +103,7 @@ resource "aws_eks_node_group" "main" {
   cluster_name    = aws_eks_cluster.main.name
   node_group_name = "${var.cluster_name}-nodes"
   node_role_arn   = aws_iam_role.node_group.arn
-  subnet_ids      = var.private_subnet_ids  # Nodes in private subnets
+  subnet_ids      = var.node_subnet_ids != null ? var.node_subnet_ids : var.private_subnet_ids
   instance_types  = var.node_instance_types
 
   scaling_config {
@@ -128,7 +128,7 @@ resource "aws_eks_node_group" "main" {
 # ── ECR Repositories (one per service) ───────────────────────────────────────
 
 resource "aws_ecr_repository" "services" {
-  for_each = toset(["pos-service", "inventory-service", "auth-service", "frontend"])
+  for_each = var.create_ecr_repos ? toset(["pos-service", "inventory-service", "auth-service", "frontend"]) : toset([])
 
   name                 = "mini-prism/${each.key}"
   image_tag_mutability = "MUTABLE"

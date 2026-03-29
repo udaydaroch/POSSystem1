@@ -39,6 +39,18 @@ variable "node_max" {
   default = 4
 }
 
+variable "node_subnet_ids" {
+  type        = list(string)
+  description = "Subnets for worker nodes. Defaults to private_subnet_ids when null."
+  default     = null
+}
+
+variable "create_ecr_repos" {
+  type        = bool
+  description = "Set to false if ECR repos already exist (e.g. created by the EC2 module)."
+  default     = true
+}
+
 variable "tags" {
   type    = map(string)
   default = {}
