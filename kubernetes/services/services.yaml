@@ -2,6 +2,16 @@
 # ClusterIP services expose each pod internally within the cluster.
 # The Ingress (below) handles external traffic routing to these services.
 
+# ── Namespace ─────────────────────────────────────────────────────────────────
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: prism
+  labels:
+    name: prism
+
+---
 apiVersion: v1
 kind: Service
 metadata:
@@ -45,16 +55,6 @@ spec:
       port: 8082
       targetPort: 8082
   type: ClusterIP
-
----
-# ── Namespace ─────────────────────────────────────────────────────────────────
-
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: prism
-  labels:
-    name: prism
 
 ---
 apiVersion: v1
