@@ -22,11 +22,13 @@ export default function DashboardPage() {
   const [lowStock, setLowStock] = useState([])
   const [loading, setLoading] = useState(true)
 
+  const canManage = user?.role === 'MANAGER' || user?.role === 'ADMIN'
+
   useEffect(() => {
     Promise.all([
       posApi.getSales().catch(() => []),
       inventoryApi.getProducts().catch(() => []),
-      inventoryApi.getLowStock().catch(() => []),
+      canManage ? inventoryApi.getLowStock().catch(() => []) : Promise.resolve([]),
     ]).then(([s, p, l]) => {
       setSales(Array.isArray(s) ? s : [])
       setProducts(Array.isArray(p) ? p : [])
@@ -72,7 +74,7 @@ export default function DashboardPage() {
         <StatCard
           label="Products in Catalogue"
           value={products.length}
-          sub={`${lowStock.length} low stock`}
+          sub={canManage ? `${lowStock.length} low stock` : undefined}
           onClick={() => navigate('/inventory')}
         />
         <StatCard
@@ -116,7 +118,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Low Stock Alerts */}
-        <div className="card">
+        {canManage && <div className="card">
           <div className="section-head">
             <span>Stock Alerts</span>
             <button className="btn btn-ghost btn-sm" onClick={() => navigate('/inventory')}>Manage</button>
@@ -138,7 +140,7 @@ export default function DashboardPage() {
               ))}
             </div>
           )}
-        </div>
+        </div>}
       </div>
     </div>
   )
