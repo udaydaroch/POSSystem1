@@ -5,7 +5,7 @@
 # Spin up:   trigger "Deploy Demo (EKS)" in GitHub Actions
 # Tear down: trigger "Teardown Demo (EKS)" after the interview
 #
-# Estimated cost: ~$5/day (EKS control plane + 2x t3.medium nodes)
+# Estimated cost: ~$3/day (EKS control plane + 2x t3.small nodes)
 
 terraform {
   required_version = ">= 1.6"
@@ -71,7 +71,7 @@ module "eks" {
   public_subnet_ids   = module.vpc.public_subnet_ids
   private_subnet_ids  = module.vpc.private_subnet_ids
   node_subnet_ids     = module.vpc.public_subnet_ids
-  node_instance_types = ["t3.medium"]
+  node_instance_types = ["t3.small"]
   node_desired        = 2
   node_min            = 1
   node_max            = 3
