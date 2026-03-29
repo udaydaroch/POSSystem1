@@ -141,6 +141,10 @@ jobs:
             --set serviceAccount.name=aws-load-balancer-controller \
             --set "serviceAccount.annotations.eks\.amazonaws\.com/role-arn=$LBC_ROLE_ARN" \
             --wait --timeout 5m
+          kubectl rollout status deployment/aws-load-balancer-controller \
+            -n kube-system --timeout=120s
+          # Wait for the webhook TLS to be ready before applying any Services
+          sleep 15
 
       - name: Create namespace
         run: kubectl apply -f kubernetes/services/services.yaml
